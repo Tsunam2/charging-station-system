@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1206组 - 智能充电桩管理面板</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: #0f172a;
+            color: #f1f5f9;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            padding: 24px;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            border-bottom: 1px solid #334155;
+            padding-bottom: 16px;
+            margin-bottom: 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            font-size: 24px;
+            color: #2dd4bf;
+        }
+
+        .sub-title {
+            font-size: 14px;
+            color: #94a3b8;
+            margin-top: 4px;
+        }
+
+        .grid-layout {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 24px;
+            align-items: start;
+        }
+
+        @media (min-width: 1024px) {
+            .grid-layout {
+                grid-template-columns: 1fr 1.2fr 1fr;
+            }
+        }
+
+        .card {
+            background-color: #1e293b;
+            padding: 20px;
+            border: 1px solid #475569;
+            border-radius: 12px;
+            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.3);
+        }
+
+        .card h2 {
+            font-size: 14px;
+            font-weight: bold;
+            tracking-letter: 0.05em;
+            text-transform: uppercase;
+            padding-bottom: 8px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid #334155;
+        }
+
+        .label {
+            font-size: 12px;
+            color: #94a3b8;
+            display: block;
+            margin-bottom: 6px;
+        }
+
+        input,
+        select {
+            width: 100%;
+            background-color: #020617;
+            border: 1px solid #475569;
+            padding: 10px;
+            font-size: 14px;
+            color: #f1f5f9;
+            border-radius: 6px;
+            outline: none;
+            margin-bottom: 12px;
+        }
+
+        input:focus {
+            border-color: #2dd4bf;
+        }
+
+        .btn {
+            width: 100%;
+            border: none;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 8px;
+            color: white;
+        }
+
+        .btn-teal {
+            background-color: #0d9488;
+        }
+
+        .btn-teal:hover {
+            background-color: #115e59;
+        }
+
+        .btn-amber {
+            background-color: #d97706;
+        }
+
+        .btn-amber:hover {
+            background-color: #b45309;
+        }
+
+        .btn-blue {
+            background-color: #2563eb;
+        }
+
+        .btn-blue:hover {
+            background-color: #1d4ed8;
+        }
+
+        .btn-slate {
+            background-color: #475569;
+        }
+
+        .btn-slate:hover {
+            background-color: #334155;
+        }
+
+        .btn-emerald {
+            background-color: #059669;
+        }
+
+        .btn-emerald:hover {
+            background-color: #047857;
+        }
+
+        .btn-disabled {
+            background-color: #334155;
+            color: #64748b;
+            cursor: not-allowed;
+        }
+
+        .monitor-box {
+            display: flex;
+            flex-direction: column;
+            height: 400px;
+        }
+
+        .log-container {
+            flex: 1;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 11px;
+            color: #4ade80;
+            background-color: #020617;
+            padding: 10px;
+            border-radius: 6px;
+            margin-top: 10px;
+            line-height: 1.6;
+        }
+
+        .log-item {
+            padding: 6px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid #1e293b;
+            border-radius: 4px;
+            margin-bottom: 6px;
+            word-break: break-all;
+        }
+
+        .status-unpaid {
+            color: #f87171;
+            font-weight: bold;
+        }
+
+        .status-success {
+            color: #6ee7b7;
+            font-weight: bold;
+        }
+
+        .status-warn {
+            color: #fbbf24;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="loginWindow" class="card" style="width: 100%; max-width: 400px;">
+        <h1 style="text-align: center; margin-bottom: 4px;">⚡ 智能充电桩系统网关</h1>
+        <p style="text-align: center; font-size: 12px; color: #94a3b8; margin-bottom: 20px;">1206组大作业 - 本地纯净运行版</p>
+
+        <div>
+            <span class="label">账号</span>
+            <input id="loginUser" type="text" placeholder="请输入账号">
+
+            <span class="label">密码</span>
+            <input id="loginPass" type="password" placeholder="请输入密码">
+
+            <span class="label">指定角色身份（仅在点击注册时生效）</span>
+            <select id="registerRole">
+                <option value="USER">🚗 普通车主用户 (USER)</option>
+                <option value="ADMIN">🛠️ 系统超级管理员 (ADMIN)</option>
+            </select>
+
+            <div style="display: flex; gap: 12px; margin-top: 16px;">
+                <button onclick="handleLogin()" class="btn btn-teal" style="margin:0;">🔑 登 录</button>
+                <button onclick="handleRegister()" class="btn btn-slate" style="margin:0;">📝 注册账号</button>
+            </div>
+            <p id="loginError"
+                style="text-align: center; font-size: 12px; color: #f87171; margin-top: 12px; min-height: 16px;"></p>
+        </div>
+    </div>
+
+    <div id="mainWindow" class="container" style="display: none;">
+        <header>
+            <div>
+                <h1>⚡ 充电桩分布式实时事务管理沙盘</h1>
+                <div class="sub-title">
+                    当前权限: <span id="identityTag" style="color: #2dd4bf; font-weight: bold;"></span>
+                    | 识别 ID: <span id="currentUid"
+                        style="color: #fbbf24; font-weight: bold; font-family: monospace;"></span>
+                </div>
+            </div>
+            <button onclick="location.reload()" class="logout-btn">安全登出</button>
+        </header>
+
+        <div class="grid-layout">
+            <div id="panelUser" class="card" style="display: none;">
+                <h2 style="color: #fbbf24;">Step 1. 提交充电订单</h2>
+                <span class="label">设置预计充电时间/时长 (分钟)</span>
+                <input id="chargeMinutes" type="number" value="30">
+                <p style="font-size: 10px; color: #64748b; margin-top: -6px; margin-bottom: 16px; font-style: italic;">※
+                    调度法则：慢充30min/6元 | 快充30min/18元</p>
+
+                <button onclick="submitOrder('FAST')" class="btn btn-amber">🚀 申请高性能快充 (FAST)</button>
+                <button onclick="submitOrder('SLOW')" class="btn btn-blue">🐢 申请经济型慢充 (SLOW)</button>
+            </div>
+
+            <div class="card monitor-box">
+                <h2 style="color: #2dd4bf; display: flex; justify-content: space-between;">
+                    <span>🖥️ LIVE MONITOR 核心调度监视器</span>
+                    <span id="pollTag" style="font-size: 10px; color: #64748b;">总线空闲</span>
+                </h2>
+                <div id="monitorLogContainer" class="log-container">
+                    <div style="color: #64748b; font-style: italic;">● 正在等待业务指令发起，高频数据总线处于静默监听状态...</div>
+                </div>
+            </div>
+
+            <div id="panelPay" class="card" style="display: none;">
+                <h2 style="color: #34d399;">Step 2. 离场结算网关</h2>
+                <span class="label">当前锁定的流水号</span>
+                <input id="billNumber" type="text" placeholder="订单提交后自动绑定" readonly
+                    style="color: #94a3b8; font-family: monospace;">
+
+                <div style="margin-top: 16px;">
+                    <button id="btnStop" onclick="stopCharging()" class="btn btn-slate btn-disabled" disabled>🔌 结束充电
+                        (拔枪释放物理桩)</button>
+                    <button id="btnPay" onclick="payWithWeChat()" class="btn btn-slate btn-disabled" disabled>🟢
+                        模拟微信支付安全结算</button>
+                </div>
+            </div>
+
+            <div id="panelAdmin" class="card" style="display: none; grid-column: span 3;">
+                <h2 style="color: #2dd4bf;">🛠 ---- 管理端专用物理桩状态监控 ----</h2>
+                <div
+                    style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; font-family: monospace; font-size: 12px;">
+                    <div style="background:#020617; padding:12px; border:1px solid #334155; border-radius:4px;"><span
+                            style="color:#94a3b8">快充桩 A01:</span> <span style="color:#4ade80">● 智能分布式监听中</span></div>
+                    <div style="background:#020617; padding:12px; border:1px solid #334155; border-radius:4px;"><span
+                            style="color:#94a3b8">快充桩 A02:</span> <span style="color:#4ade80">● 智能分布式监听中</span></div>
+                    <div style="background:#020617; padding:12px; border:1px solid #334155; border-radius:4px;"><span
+                            style="color:#94a3b8">慢充桩 B01:</span> <span style="color:#4ade80">● 智能分布式监听中</span></div>
+                    <div style="background:#020617; padding:12px; border:1px solid #334155; border-radius:4px;"><span
+                            style="color:#94a3b8">慢充桩 B02:</span> <span style="color:#4ade80">● 智能分布式监听中</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        window.currentUsername = "";
+        window.currentUserId = "";
+        window.activeBillNumber = "";
+        window.pollingInterval = null;
+        window.lastAssignedPile = null;
+        window.pendingLogged = false;
+
+        function appendLog(msg, type = "info") {
+            const container = document.getElementById('monitorLogContainer');
+            if (container.innerHTML.includes("正在等待业务指令")) container.innerHTML = "";
+            const timeStr = new Date().toLocaleTimeString();
+
+            let classStyle = "";
+            if (type === "warn") classStyle = "class='status-warn'";
+            if (type === "danger") classStyle = "class='status-unpaid'";
+            if (type === "success") classStyle = "class='status-success'";
+
+            const logItem = `<div class="log-item"><span style="color:#64748b">[${timeStr}]</span> <span ${classStyle}>${msg}</span></div>`;
+            container.innerHTML = container.innerHTML + logItem;
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function handleLogin() {
+            const u = document.getElementById('loginUser').value;
+            const p = document.getElementById('loginPass').value;
+            if (!u || !p) return;
+
+            fetch(`/api/user/login?username=${u}&password=${p}`)
+                .then(res => res.text())
+                .then(data => {
+                    if (data.startsWith("SUCCESS:")) {
+                        // 🟩 核心修复点：把变量名统一合并成 parts，彻底粉碎异常
+                        const parts = data.split(":");
+                        const userRole = parts[1].trim().toUpperCase();
+                        window.currentUserId = parts[2].trim();
+                        window.currentUsername = u;
+
+                        document.getElementById('loginWindow').style.display = 'none';
+                        document.getElementById('mainWindow').style.display = 'block';
+                        document.getElementById('currentUid').innerText = window.currentUserId;
+
+                        const tag = document.getElementById('identityTag');
+                        const panelAdmin = document.getElementById('panelAdmin');
+                        const panelUser = document.getElementById('panelUser');
+                        const panelPay = document.getElementById('panelPay');
+
+                        if (userRole === 'ADMIN') {
+                            tag.innerText = "🛠️ 超级管理员 (ADMIN)";
+                            panelAdmin.style.display = 'block';
+                            panelUser.style.display = 'none';
+                            panelPay.style.display = 'none';
+                            appendLog(`⚙️ 超级管理员 [${u}] 成功握手，管理端监控内核挂载完毕。`);
+                        } else {
+                            tag.innerText = "🚗 进场车主用户 (USER)";
+                            panelAdmin.style.display = 'none';
+                            panelUser.style.display = 'block';
+                            panelPay.style.display = 'block';
+                            appendLog(`👤 车主 [${u}] 鉴权成功，后端 1000 元默认初始本金已激活。`);
+                        }
+                    } else {
+                        document.getElementById('loginError').innerText = "❌ " + data;
+                    }
+                }).catch(err => {
+                    document.getElementById('loginError').innerText = "❌ 无法连接到后端服务，请确认后端已成功拉起。";
+                });
+        }
+
+        function handleRegister() {
+            const u = document.getElementById('loginUser').value;
+            const p = document.getElementById('loginPass').value;
+            const r = document.getElementById('registerRole').value;
+            const err = document.getElementById('loginError');
+            if (!u || !p) { err.innerText = "❌ 账号或密码不能为空"; return; }
+            fetch(`/api/user/register?username=${u}&password=${p}&role=${r}`).then(res => res.text()).then(data => { err.innerText = data; });
+        }
+
+        function submitOrder(type) {
+            const mins = document.getElementById('chargeMinutes').value;
+            if (!mins || mins <= 0) return;
+
+            fetch(`/api/charging/apply?userId=${window.currentUserId}&chargeType=${type}&chargeMinutes=${mins}`)
+                .then(res => res.text())
+                .then(rawResponse => {
+                    const tokens = rawResponse.split(":");
+                    const billNo = tokens[0];
+                    const predPile = tokens[1];
+                    const predWait = tokens[2];
+                    const totalFee = tokens[3];
+
+                    window.activeBillNumber = billNo;
+                    document.getElementById('billNumber').value = billNo;
+
+                    appendLog(`📝 订单成功提交！流水号: ${billNo}`, "warn");
+                    appendLog(`🔮 【核心调度算法前置推演模型汇报】:\n   ▪ 预计指派物理桩位: [${predPile}]\n   ▪ 预计前方排队时间: [${predWait}]\n   ▪ 预计最终结算账单: [${totalFee}] 元`, "success");
+                    appendLog(`⏳ 数据已成功打入 Redis 高频缓冲层，正在等待强电触点接通...`);
+
+                    const btnStop = document.getElementById('btnStop');
+                    btnStop.disabled = false;
+                    btnStop.className = "btn btn-amber";
+
+                    startRealtimeMonitor();
+                });
+        }
+
+        function startRealtimeMonitor() {
+            if (window.pollingInterval) clearInterval(window.pollingInterval);
+            const tag = document.getElementById('pollTag');
+            tag.innerText = "● 实时轮询中";
+            tag.style.color = "#2dd4bf";
+
+            window.pollingInterval = setInterval(() => {
+                fetch(`/api/charging/status?billNumber=${window.activeBillNumber}`)
+                    .then(res => res.text())
+                    .then(statusData => {
+                        if (statusData === "NOT_FOUND") return;
+                        const parts = statusData.split(":");
+                        const status = parts[0];
+                        const pileId = parts[1];
+
+                        if (status === "CHARGING") {
+                            if (pileId === "PENDING") {
+                                if (!window.pendingLogged) {
+                                    appendLog(`🛰️ 实时监控：订单处于 Redis 排队缓冲中，等待后台调度引擎指派...`);
+                                    window.pendingLogged = true;
+                                }
+                            } else {
+                                if (!window.lastAssignedPile || window.lastAssignedPile !== pileId) {
+                                    appendLog(`⚡ [实时连通汇报] 强电继电器吸合成功！物理桩号 [${pileId}] 正式接入充电状态。`, "success");
+                                    appendLog(`🔋 [${pileId}] 强电持续稳定输送中，车载控制系统正在高频接收电量...`);
+                                    window.lastAssignedPile = pileId;
+                                }
+                            }
+                        } else if (status === "UNPAID") {
+                            if (pileId === "PENDING") {
+                                appendLog(`⚠️ 车主提前取消排队，事务终止，账单执行 0 元抹平。`, "warn");
+                            } else {
+                                appendLog(`🔌 强电脉冲关闭，物理连接断开！物理桩 [${pileId}] 已被安全释放。`, "warn");
+                            }
+                            appendLog(`🔔 【核心总线催缴提醒】充电已结束！请立即点击右侧微信支付进行清算离场！`, "danger");
+
+                            document.getElementById('btnStop').disabled = true;
+                            document.getElementById('btnStop').className = "btn btn-slate btn-disabled";
+
+                            const btnPay = document.getElementById('btnPay');
+                            btnPay.disabled = false;
+                            btnPay.className = "btn btn-emerald";
+
+                            clearInterval(window.pollingInterval);
+                        }
+                    });
+            }, 1200);
+        }
+
+        function stopCharging() {
+            fetch(`/api/charging/stop?billNumber=${window.activeBillNumber}`);
+        }
+
+        function payWithWeChat() {
+            fetch(`/api/charging/pay?billNumber=${window.activeBillNumber}`).then(res => res.text()).then(data => {
+                if (data.startsWith("SUCCESS:")) {
+                    const realFee = data.split(":")[1];
+                    appendLog(`✅ [微信支付成功] 成功扣除安全钱包本金 [${realFee}] 元！本次充电事务圆满销账闭环。`, "success");
+
+                    const btnPay = document.getElementById('btnPay');
+                    btnPay.disabled = true;
+                    btnPay.className = "btn btn-slate btn-disabled";
+
+                    document.getElementById('billNumber').value = "";
+                    window.lastAssignedPile = null;
+                    window.activeBillNumber = "";
+                    window.pendingLogged = false;
+                } else {
+                    appendLog(`❌ 微信支付核销失败：${data}`, "danger");
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>
