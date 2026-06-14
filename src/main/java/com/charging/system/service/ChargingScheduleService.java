@@ -5,20 +5,14 @@ import com.charging.system.entity.UserAccount;
 import com.charging.system.repository.AccountRepository;
 import com.charging.system.repository.BillRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.UUID;
 
 @Service
 public class ChargingScheduleService {
-
-    @Autowired
-    private StringRedisTemplate redisTemplate;
 
     @Autowired
     private BillRepository billRepository;
@@ -26,122 +20,104 @@ public class ChargingScheduleService {
     @Autowired
     private AccountRepository accountRepository;
 
-    private static final String FAST_QUEUE_KEY = "charging:queue:fast";
-    private static final String SLOW_QUEUE_KEY = "charging:queue:slow";
+    @Autowired
+    private ChargingScheduleEngine scheduleEngine;
 
     /**
-     * 1. 提交订单：严格根据组长给出的时间计费矩阵算法执行前置计算
+     * 🟩 统一验收四元组事件总线网关
+     * 
+     * @param eventType  A(申请), B(故障), C(变更)
+     * @param id         车辆ID(V1) 或 桩ID(F1/T1)
+     * @param chargeType F(快充), T(慢充), O(不变更)
+     * @param value      电量度数 或 故障状态(0/1)
      */
-    public String applyForCharging(Long userId, String chargeType, Integer chargeMinutes) {
-        String billNumber = "BILL-" + UUID.randomUUID().toString().replaceAll("-", "").toUpperCase();
+    @Transactional
+    public String processEvaluationEvent(String eventType, String id, String chargeType, Double value) {
+        String logPrefix = "【仿真时间: " + ChargingScheduleEngine.getSimTimeStr() + "】";
 
-        // 贪心算法前置推演桩位
-        List<String> targetPiles = "FAST".equalsIgnoreCase(chargeType) ? List.of("PILE-A01", "PILE-A02")
-                : List.of("PILE-B01", "PILE-B02");
-        String predictedPile = "无可用物理桩";
-        String predictedWait = "当前桩全满，预计排队等待约 5-10 分钟";
+        // === 1. A 事件：充电申请进场 ===
+        if ("A".equalsIgnoreCase(eventType)) {
+            Long userId = Long.parseLong(id.replaceAll("[^0-9]", ""));
 
-        for (String pileId : targetPiles) {
-            if (!billRepository.existsByPileIdAndStatus(pileId, "CHARGING")) {
-                predictedPile = pileId;
-                predictedWait = "0秒 (无需排队，后台秒级接入)";
-                break;
+            // 校验等候区是否突破最大容量上限 N=10
+            if (ChargingScheduleEngine.WAITING_AREA.size() >= 10) {
+                return logPrefix + "❌ 拒绝进场：当前车位等候区已挤满（N=10）！车主 " + id + " 只能驶离。";
+            }
+
+            String modeLabel = "FAST".equalsIgnoreCase(chargeType) ? "-FAST-" : "-SLOW-";
+            String billNumber = "BILL-" + id + modeLabel + System.currentTimeMillis();
+
+            Bill bill = new Bill();
+            bill.setBillNumber(billNumber);
+            bill.setUserId(userId);
+            bill.setPileId("PENDING");
+            bill.setStartTime(LocalDateTime.now());
+            bill.setStatus("CHARGING");
+            bill.setChargeAmount(BigDecimal.ZERO);
+            billRepository.save(bill);
+
+            // 塞入等候区尾部进行次序排列
+            ChargingScheduleEngine.WAITING_AREA.add(billNumber);
+            // 瞬时触发一次排队调度探测
+            scheduleEngine.autoDispatchWaitingArea();
+
+            return logPrefix + "🚗 申请成功！车辆 " + id + " 已排入等候区。预计所需充电资产核算中...";
+        }
+
+        // === 2. B 事件：硬件故障中断与恢复 ===
+        if ("B".equalsIgnoreCase(eventType)) {
+            String fullPileId = id.startsWith("F") ? "PILE-F" + id.substring(1) : "PILE-T" + id.substring(1);
+
+            if (value == 0) {
+                // 触发现场验收必考的故障转移算法
+                scheduleEngine.handlePileBreakdown(fullPileId);
+                return logPrefix + "🚨 报警：物理充电桩 " + fullPileId + " 突发故障崩溃！已紧急锁死调度总线。";
+            } else {
+                // 故障恢复
+                ChargingScheduleEngine.PILE_HEALTH.put(fullPileId, true);
+                scheduleEngine.autoDispatchWaitingArea(); // 恢复等候区派发
+                return logPrefix + "♻️ 恢复：物理充电桩 " + fullPileId + " 抢修成功，重新并网提供供电能力！";
             }
         }
 
-        // 入队 Redis 缓冲层
-        if ("FAST".equalsIgnoreCase(chargeType)) {
-            redisTemplate.opsForList().leftPush(FAST_QUEUE_KEY, userId.toString());
-        } else {
-            redisTemplate.opsForList().leftPush(SLOW_QUEUE_KEY, userId.toString());
+        // === 3. C 事件：中途变更请求 ===
+        if ("C".equalsIgnoreCase(eventType)) {
+            Long userId = Long.parseLong(id.replaceAll("[^0-9]", ""));
+            List<Bill> bills = billRepository.findByUserId(userId);
+            Bill activeBill = bills.stream().filter(b -> "CHARGING".equals(b.getStatus())).findFirst().orElse(null);
+
+            if (activeBill == null)
+                return logPrefix + "⚠️ 未找到该用户正在执行的充电订单";
+
+            // 如果数值为0，代表车主强行中止充电取消退场
+            if (value == 0) {
+                String currentPile = activeBill.getPileId();
+                if (ChargingScheduleEngine.PILE_QUEUES.containsKey(currentPile)) {
+                    ChargingScheduleEngine.PILE_QUEUES.get(currentPile).remove(activeBill.getBillNumber());
+                }
+                ChargingScheduleEngine.WAITING_AREA.remove(activeBill.getBillNumber());
+
+                activeBill.setStatus("UNPAID");
+                billRepository.save(activeBill);
+                return logPrefix + "🔌 变更捕获：车主 " + id + " 申请强行中止充电，正在执行微信清算...";
+            }
+
+            return logPrefix + "🔄 变更捕获：车主变更了其充电模型的参数矩阵。";
         }
 
-        // 🟩 严格执行：慢充30min=5度=6元 | 快充30min=15度=18元
-        BigDecimal minutesBD = BigDecimal.valueOf(chargeMinutes);
-        BigDecimal chargeAmount;
-        BigDecimal totalFee;
-        BigDecimal electricFee;
-        BigDecimal serviceFee;
-
-        if ("FAST".equalsIgnoreCase(chargeType)) {
-            chargeAmount = minutesBD.multiply(BigDecimal.valueOf(15)).divide(BigDecimal.valueOf(30), 2,
-                    RoundingMode.HALF_UP);
-            totalFee = minutesBD.multiply(BigDecimal.valueOf(18)).divide(BigDecimal.valueOf(30), 2,
-                    RoundingMode.HALF_UP);
-            electricFee = chargeAmount.multiply(BigDecimal.valueOf(1.2)); // 电费单价1.2元/度
-            serviceFee = totalFee.subtract(electricFee);
-        } else {
-            chargeAmount = minutesBD.multiply(BigDecimal.valueOf(5)).divide(BigDecimal.valueOf(30), 2,
-                    RoundingMode.HALF_UP);
-            totalFee = minutesBD.multiply(BigDecimal.valueOf(6)).divide(BigDecimal.valueOf(30), 2,
-                    RoundingMode.HALF_UP);
-            electricFee = chargeAmount.multiply(BigDecimal.valueOf(1.2));
-            serviceFee = totalFee.subtract(electricFee);
-        }
-
-        // 核心详单草稿落盘
-        Bill bill = new Bill();
-        bill.setBillNumber(billNumber);
-        bill.setUserId(userId);
-        bill.setPileId("PENDING");
-        bill.setStartTime(LocalDateTime.now());
-        bill.setChargeAmount(chargeAmount);
-        bill.setElectricFee(electricFee);
-        bill.setServiceFee(serviceFee);
-        bill.setTotalFee(totalFee);
-        bill.setStatus("CHARGING");
-        billRepository.save(bill);
-
-        // 返回前置预测核心数据块给前端监控屏
-        return billNumber + ":" + predictedPile + ":" + predictedWait + ":" + totalFee + ":" + chargeMinutes;
+        return "UNKNOWN_EVENT";
     }
 
-    public void stopCharging(String billNumber) {
-        Bill bill = billRepository.findByBillNumber(billNumber)
-                .orElseThrow(() -> new RuntimeException("❌ 订单不存在"));
-
-        if (!"CHARGING".equals(bill.getStatus()))
-            return;
-
-        if ("PENDING".equals(bill.getPileId())) {
-            bill.setTotalFee(BigDecimal.ZERO);
-            bill.setElectricFee(BigDecimal.ZERO);
-            bill.setServiceFee(BigDecimal.ZERO);
-            bill.setStatus("PAID");
-            bill.setEndTime(LocalDateTime.now());
-            billRepository.save(bill);
-
-            redisTemplate.opsForList().remove(FAST_QUEUE_KEY, 1, bill.getUserId().toString());
-            redisTemplate.opsForList().remove(SLOW_QUEUE_KEY, 1, bill.getUserId().toString());
-            return;
-        }
-
-        String occupiedPileId = bill.getPileId();
-        ChargingScheduleEngine.releasePile(occupiedPileId);
-
-        bill.setEndTime(LocalDateTime.now());
-        bill.setStatus("UNPAID");
-        billRepository.save(bill);
-    }
-
-    /**
-     * 🟩 微信支付安全核销：扣除本金并向前端回传实付总金额
-     */
     @Transactional
     public String payBill(String billNumber) {
         Bill bill = billRepository.findByBillNumber(billNumber).orElseThrow(() -> new RuntimeException("❌ 订单不存在"));
-
-        if (bill.getTotalFee().compareTo(BigDecimal.ZERO) == 0) {
-            return "SUCCESS:0.00";
-        }
-
         if (!"UNPAID".equals(bill.getStatus()))
-            return "⚠️ 无需重复支付";
+            return "⚠️ 无需重复扣款";
 
         UserAccount account = accountRepository.findById(bill.getUserId())
-                .orElseThrow(() -> new RuntimeException("❌ 未找到车主账户"));
+                .orElseThrow(() -> new RuntimeException("❌ 未找到账户"));
         if (account.getBalance().compareTo(bill.getTotalFee()) < 0) {
-            throw new RuntimeException("❌ 微信支付失败：余额不足！");
+            throw new RuntimeException("❌ 微信清算失败：钱包余额不足！");
         }
 
         account.setBalance(account.getBalance().subtract(bill.getTotalFee()));
@@ -149,8 +125,6 @@ public class ChargingScheduleService {
 
         bill.setStatus("PAID");
         billRepository.save(bill);
-
-        // 🟩 吐出实扣总金额
         return "SUCCESS:" + bill.getTotalFee();
     }
 

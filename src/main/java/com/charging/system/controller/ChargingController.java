@@ -1,6 +1,5 @@
 package com.charging.system.controller;
 
-import com.charging.system.entity.Bill;
 import com.charging.system.service.ChargingScheduleService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,30 +14,27 @@ public class ChargingController {
     @Autowired
     private ChargingScheduleService chargingScheduleService;
 
-    // 🟩 接收前置设置的充电时间（分钟）参数
-    @GetMapping("/apply")
-    public String applyCharging(
-            @RequestParam Long userId,
-            @RequestParam String chargeType,
-            @RequestParam Integer chargeMinutes) {
-        return chargingScheduleService.applyForCharging(userId, chargeType, chargeMinutes);
-    }
-
-    @GetMapping("/status")
-    public String getStatus(@RequestParam String billNumber) {
-        Bill b = chargingScheduleService.getBillStatus(billNumber);
-        if (b == null)
-            return "NOT_FOUND";
-        return b.getStatus() + ":" + b.getPileId() + ":" + b.getTotalFee();
-    }
-
-    @GetMapping("/stop")
-    public String stopCharging(@RequestParam String billNumber) {
+    /**
+     * 🟩 专门应对现场验收的四元组用例注入网关入口
+     * 样例：http://localhost:8080/api/charging/event?rawTuple=A,V1,F,60
+     */
+    @GetMapping("/event")
+    public String injectEvaluationTuple(@RequestParam String rawTuple) {
         try {
-            chargingScheduleService.stopCharging(billNumber);
-            return "SUCCESS";
+            // 自动切割解析标准的 (A, V1, F, 60) 格式
+            String[] tokens = rawTuple.replace("(", "").replace(")", "").split(",");
+            if (tokens.length != 4) {
+                return "❌ 格式非法！请输入类似 'A,V1,F,60' 的标准四元组。";
+            }
+
+            String eventType = tokens[0].trim();
+            String id = tokens[1].trim();
+            String chargeType = tokens[2].trim();
+            Double value = Double.parseDouble(tokens[3].trim());
+
+            return chargingScheduleService.processEvaluationEvent(eventType, id, chargeType, value);
         } catch (Exception e) {
-            return e.getMessage();
+            return "❌ 解析核心抛出异常: " + e.getMessage();
         }
     }
 
