@@ -7,6 +7,7 @@ import com.charging.system.repository.BillRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -24,12 +25,7 @@ public class ChargingScheduleService {
     private ChargingScheduleEngine scheduleEngine;
 
     /**
-     * 🟩 统一验收四元组事件总线网关
-     * 
-     * @param eventType  A(申请), B(故障), C(变更)
-     * @param id         车辆ID(V1) 或 桩ID(F1/T1)
-     * @param chargeType F(快充), T(慢充), O(不变更)
-     * @param value      电量度数 或 故障状态(0/1)
+     * 统一验收四元组事件自适应流转控制网关
      */
     @Transactional
     public String processEvaluationEvent(String eventType, String id, String chargeType, Double value) {
@@ -39,9 +35,8 @@ public class ChargingScheduleService {
         if ("A".equalsIgnoreCase(eventType)) {
             Long userId = Long.parseLong(id.replaceAll("[^0-9]", ""));
 
-            // 校验等候区是否突破最大容量上限 N=10
             if (ChargingScheduleEngine.WAITING_AREA.size() >= 10) {
-                return logPrefix + "❌ 拒绝进场：当前车位等候区已挤满（N=10）！车主 " + id + " 只能驶离。";
+                return logPrefix + "❌ 拒绝进场：当前车位等候区已挤满（N=10）！";
             }
 
             String modeLabel = "FAST".equalsIgnoreCase(chargeType) ? "-FAST-" : "-SLOW-";
@@ -51,58 +46,133 @@ public class ChargingScheduleService {
             bill.setBillNumber(billNumber);
             bill.setUserId(userId);
             bill.setPileId("PENDING");
-            bill.setStartTime(LocalDateTime.now());
+            bill.setStartTime(LocalDateTime.now()); // 公平时间戳锁定
             bill.setStatus("CHARGING");
             bill.setChargeAmount(BigDecimal.ZERO);
+            bill.setExpectedAmount(BigDecimal.valueOf(value));
+            bill.setTotalFee(BigDecimal.ZERO);
+            bill.setElectricFee(BigDecimal.ZERO);
+            bill.setServiceFee(BigDecimal.ZERO);
             billRepository.save(bill);
 
-            // 塞入等候区尾部进行次序排列
             ChargingScheduleEngine.WAITING_AREA.add(billNumber);
-            // 瞬时触发一次排队调度探测
             scheduleEngine.autoDispatchWaitingArea();
 
-            return logPrefix + "🚗 申请成功！车辆 " + id + " 已排入等候区。预计所需充电资产核算中...";
+            return logPrefix + "🚗 申请成功！车辆 " + id + " 已排入等候区。";
         }
 
-        // === 2. B 事件：硬件故障中断与恢复 ===
+        // === 2. B 事件：充电桩故障与抢修并网 ===
         if ("B".equalsIgnoreCase(eventType)) {
             String fullPileId = id.startsWith("F") ? "PILE-F" + id.substring(1) : "PILE-T" + id.substring(1);
 
             if (value == 0) {
-                // 触发现场验收必考的故障转移算法
                 scheduleEngine.handlePileBreakdown(fullPileId);
-                return logPrefix + "🚨 报警：物理充电桩 " + fullPileId + " 突发故障崩溃！已紧急锁死调度总线。";
+                return logPrefix + "🚨 报警：物理充电桩 " + fullPileId + " 崩溃！等候区挂起，执行级联灾备调度。";
             } else {
-                // 故障恢复
                 ChargingScheduleEngine.PILE_HEALTH.put(fullPileId, true);
-                scheduleEngine.autoDispatchWaitingArea(); // 恢复等候区派发
-                return logPrefix + "♻️ 恢复：物理充电桩 " + fullPileId + " 抢修成功，重新并网提供供电能力！";
+                scheduleEngine.autoDispatchWaitingArea();
+                return logPrefix + "♻️ 恢复：物理充电桩 " + fullPileId + " 恢复健康，重新提供供电能力。";
             }
         }
 
-        // === 3. C 事件：中途变更请求 ===
+        // === 3. C 事件：用户动态自适应变更请求 (核心大修) ===
         if ("C".equalsIgnoreCase(eventType)) {
             Long userId = Long.parseLong(id.replaceAll("[^0-9]", ""));
             List<Bill> bills = billRepository.findByUserId(userId);
             Bill activeBill = bills.stream().filter(b -> "CHARGING".equals(b.getStatus())).findFirst().orElse(null);
 
             if (activeBill == null)
-                return logPrefix + "⚠️ 未找到该用户正在执行的充电订单";
+                return logPrefix + "⚠️ 变更忽略：未找到该车主执行中的活动事务。";
 
-            // 如果数值为0，代表车主强行中止充电取消退场
+            // 🟢 子卡口 A：强行取消充电/拔枪退场
             if (value == 0) {
+                String currentPile = activeBill.getPileId();
+                boolean wasInPileQueue = false;
+                if (ChargingScheduleEngine.PILE_QUEUES.containsKey(currentPile)) {
+                    wasInPileQueue = ChargingScheduleEngine.PILE_QUEUES.get(currentPile)
+                            .remove(activeBill.getBillNumber());
+                }
+                ChargingScheduleEngine.WAITING_AREA.remove(activeBill.getBillNumber());
+
+                activeBill.setStatus("UNPAID");
+                billRepository.save(activeBill);
+
+                // 物理车位瞬时释放，必须【立刻触发】新一轮叫号
+                if (wasInPileQueue) {
+                    scheduleEngine.autoDispatchWaitingArea();
+                }
+                return logPrefix + "🔌 取消：车主 " + id + " 剔除系统，车位物理释放，即时触发等候区级联调度。";
+            }
+
+            // 🟢 子卡口 B：跨队列互切充电模式 (快慢充互切)
+            boolean currentIsFast = activeBill.getBillNumber().contains("-FAST-");
+            boolean targetIsFast = "F".equalsIgnoreCase(chargeType);
+            if (!"O".equalsIgnoreCase(chargeType) && (currentIsFast != targetIsFast)) {
+
+                // 从原排队/充电队列中彻底析出
                 String currentPile = activeBill.getPileId();
                 if (ChargingScheduleEngine.PILE_QUEUES.containsKey(currentPile)) {
                     ChargingScheduleEngine.PILE_QUEUES.get(currentPile).remove(activeBill.getBillNumber());
                 }
                 ChargingScheduleEngine.WAITING_AREA.remove(activeBill.getBillNumber());
 
-                activeBill.setStatus("UNPAID");
+                // 刷新模式标识与单号
+                String newModeLabel = targetIsFast ? "-FAST-" : "-SLOW-";
+                String oldNo = activeBill.getBillNumber();
+                String newNo = oldNo.replace("-FAST-", newModeLabel).replace("-SLOW-", newModeLabel);
+
+                activeBill.setBillNumber(newNo);
+                activeBill.setPileId("PENDING");
+                activeBill.setExpectedAmount(BigDecimal.valueOf(value));
                 billRepository.save(activeBill);
-                return logPrefix + "🔌 变更捕获：车主 " + id + " 申请强行中止充电，正在执行微信清算...";
+
+                // ⚖️ 顺位判定公平唯一标尺：依据原始 startTime 时间戳精准寻找插入位置
+                int insertPos = ChargingScheduleEngine.WAITING_AREA.size();
+                for (int idx = 0; idx < ChargingScheduleEngine.WAITING_AREA.size(); idx++) {
+                    String bNo = ChargingScheduleEngine.WAITING_AREA.get(idx);
+                    Bill other = billRepository.findByBillNumber(bNo).orElse(null);
+                    if (other != null) {
+                        boolean otherIsFast = other.getBillNumber().contains("-FAST-");
+                        if (otherIsFast == targetIsFast) {
+                            if (other.getStartTime().isAfter(activeBill.getStartTime())) {
+                                insertPos = idx;
+                                break;
+                            }
+                        }
+                    }
+                }
+                ChargingScheduleEngine.WAITING_AREA.add(insertPos, newNo);
+                scheduleEngine.autoDispatchWaitingArea(); // 瞬时触发重调
+                return logPrefix + "🔄 模式互切：车主 " + id + " 基于原始时间戳已无缝在目标队列执行公平顺位排队。";
             }
 
-            return logPrefix + "🔄 变更捕获：车主变更了其充电模型的参数矩阵。";
+            // 🟢 子卡口 C：单纯修改电量 (不切模式)
+            BigDecimal newExpected = BigDecimal.valueOf(value);
+            String currentPile = activeBill.getPileId();
+
+            boolean isFirstChargingNode = false;
+            if (ChargingScheduleEngine.PILE_QUEUES.containsKey(currentPile)
+                    && !ChargingScheduleEngine.PILE_QUEUES.get(currentPile).isEmpty()) {
+                if (ChargingScheduleEngine.PILE_QUEUES.get(currentPile).get(0).equals(activeBill.getBillNumber())) {
+                    isFirstChargingNode = true;
+                }
+            }
+
+            if (isFirstChargingNode && newExpected.compareTo(activeBill.getChargeAmount()) <= 0) {
+                // 正在充电且减少的目标电量低于已充入电量 ➔ 【即时切断熔断】
+                ChargingScheduleEngine.PILE_QUEUES.get(currentPile).remove(activeBill.getBillNumber());
+                activeBill.setStatus("UNPAID");
+                activeBill.setExpectedAmount(newExpected);
+                billRepository.save(activeBill);
+
+                scheduleEngine.autoDispatchWaitingArea(); // 车位瞬间释放触发新调度
+                return logPrefix + "🛑 熔断：新修改目标电量低于已充入度数，系统瞬间关闭强电输出并开启清算。";
+            } else {
+                // 处于常规排队，或增加目标电量延长充电时间 ➔ 顺位不发生改变，仅级联更新
+                activeBill.setExpectedAmount(newExpected);
+                billRepository.save(activeBill);
+                return logPrefix + "⚙️ 自适应：车辆电量参数矩阵已重置，等待时间参数自适应级联刷新完毕。";
+            }
         }
 
         return "UNKNOWN_EVENT";
@@ -126,9 +196,5 @@ public class ChargingScheduleService {
         bill.setStatus("PAID");
         billRepository.save(bill);
         return "SUCCESS:" + bill.getTotalFee();
-    }
-
-    public Bill getBillStatus(String billNumber) {
-        return billRepository.findByBillNumber(billNumber).orElse(null);
     }
 }

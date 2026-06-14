@@ -5,6 +5,7 @@ import com.charging.system.repository.BillRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalTime;
@@ -18,18 +19,13 @@ public class ChargingScheduleEngine {
     @Autowired
     private BillRepository billRepository;
 
-    // 1:10 比例尺仿真时钟：起始时间 06:00
     private static LocalTime simTime = LocalTime.of(6, 0);
 
-    // 内存维护充电桩硬件状态表
     public static final Map<String, Boolean> PILE_HEALTH = new ConcurrentHashMap<>();
-    // 维护每个桩的排队队列（最多3个元素）
     public static final Map<String, List<String>> PILE_QUEUES = new ConcurrentHashMap<>();
-    // 维护等候区队列（最多10个元素）
     public static final List<String> WAITING_AREA = new CopyOnWriteArrayList<>();
 
     static {
-        // 初始化2个快充桩，3个慢充桩
         PILE_HEALTH.put("PILE-F1", true);
         PILE_HEALTH.put("PILE-F2", true);
         PILE_HEALTH.put("PILE-T1", true);
@@ -48,87 +44,111 @@ public class ChargingScheduleEngine {
     }
 
     /**
-     * 🟩 核心高频时钟步进核心：每现实1秒 = 模拟10秒。由于是按分钟计费，我们让它每现实6秒步进1条虚拟分钟
+     * 步进高频核算时钟：支持无限期全量收尾直至彻底空闲清零
      */
     @Scheduled(fixedRate = 6000)
     public void clockTickAndChargeProgress() {
-        if (simTime.isAfter(LocalTime.of(11, 0))) {
-            return; // 运营时间 06:00 - 11:00 截止
-        }
-        simTime = simTime.plusMinutes(1); // 虚拟时间前进一步
+        boolean allQueuesEmpty = PILE_QUEUES.values().stream().allMatch(List::isEmpty);
+        boolean isAllCleared = WAITING_AREA.isEmpty() && allQueuesEmpty;
 
-        // 遍历所有充电桩，为处于各个桩队列第一位的（正在充电的）车辆注入能量并累算实时电费
+        // 跨过运营截止期 且 全场无滞留车辆 ➔ 终止时钟
+        if (simTime.isAfter(LocalTime.of(11, 0)) && isAllCleared)
+            return;
+
+        // 1. 优先充能
         for (String pileId : PILE_QUEUES.keySet()) {
             if (!PILE_HEALTH.get(pileId))
-                continue; // 故障桩不工作
-
+                continue;
             List<String> queue = PILE_QUEUES.get(pileId);
             if (!queue.isEmpty()) {
-                String activeBillNo = queue.get(0); // 队首正在充电
-                executeOneMinuteCharging(activeBillNo, pileId);
+                executeOneMinuteCharging(queue.get(0), pileId);
             }
         }
 
-        // 扫描调度：如果没有任何桩处于故障转移锁定状态，则正常搬运等候区的车辆
+        // 2. 步进虚拟分钟（纠正时序，保障临界点计费精准）
+        simTime = simTime.plusMinutes(1);
+
+        // 3. 释放叫号总线
         boolean checkBreakdownLock = PILE_HEALTH.values().stream().anyMatch(h -> !h);
-        if (!checkBreakdownLock) {
+        if (!checkBreakdownLock)
             autoDispatchWaitingArea();
-        }
     }
 
-    /**
-     * 逐分钟高精度多费率累产计算器
-     */
     private void executeOneMinuteCharging(String billNo, String pileId) {
         Optional<Bill> billOpt = billRepository.findByBillNumber(billNo);
-        if (billOpt.isEmpty())
+        if (billOpt.isEmpty() || !"CHARGING".equals(billOpt.get().getStatus()))
             return;
         Bill bill = billOpt.get();
 
-        if (!"CHARGING".equals(bill.getStatus()))
-            return;
-
-        // 根据快慢充桩类型，计算1分钟冲入的度数
         BigDecimal powerPerMinute = pileId.contains("-F")
-                ? BigDecimal.valueOf(30).divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP) // 快充 0.5 度/分
-                : BigDecimal.valueOf(10).divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP); // 慢充 0.1667 度/分
+                ? new BigDecimal("0.5")
+                : BigDecimal.valueOf(10).divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
 
-        // 判定当前虚拟时间下的精确费率矩阵
-        BigDecimal electricPrice = BigDecimal.valueOf(0.7); // 默认平时
+        BigDecimal electricPrice = BigDecimal.valueOf(0.7);
         if (simTime.isBefore(LocalTime.of(7, 0)))
-            electricPrice = BigDecimal.valueOf(0.4); // 谷时
-        if (simTime.isAfter(LocalTime.of(10, 0)) && simTime.isBefore(LocalTime.of(11, 1)))
-            electricPrice = BigDecimal.valueOf(1.0); // 峰时
+            electricPrice = BigDecimal.valueOf(0.4);
+        if (!simTime.isBefore(LocalTime.of(10, 0)))
+            electricPrice = BigDecimal.valueOf(1.0);
 
-        BigDecimal servicePrice = BigDecimal.valueOf(0.8); // 固定服务费
-        BigDecimal currentTotalUnitPrice = electricPrice.add(servicePrice);
+        BigDecimal currentTotalUnitPrice = electricPrice.add(BigDecimal.valueOf(0.8));
 
-        // 递增算费
-        BigDecimal newAmount = bill.getChargeAmount().add(powerPerMinute);
-        BigDecimal newElectricFee = bill.getElectricFee().add(powerPerMinute.multiply(electricPrice));
-        BigDecimal newServiceFee = bill.getServiceFee().add(powerPerMinute.multiply(servicePrice));
-        BigDecimal newTotalFee = bill.getTotalFee().add(powerPerMinute.multiply(currentTotalUnitPrice));
+        BigDecimal expected = bill.getExpectedAmount();
+        BigDecimal current = bill.getChargeAmount();
 
-        bill.setChargeAmount(newAmount.setScale(2, RoundingMode.HALF_UP));
-        bill.setElectricFee(newElectricFee.setScale(2, RoundingMode.HALF_UP));
-        bill.setServiceFee(newServiceFee.setScale(2, RoundingMode.HALF_UP));
-        bill.setTotalFee(newTotalFee.setScale(2, RoundingMode.HALF_UP));
+        if (current.compareTo(expected) < 0) {
+            BigDecimal newAmount = current.add(powerPerMinute);
+            BigDecimal addedFee = powerPerMinute.multiply(currentTotalUnitPrice);
 
-        // 如果已经达到了车主预设的度数，自动终止充电切换为待支付
-        if (bill.getChargeAmount().compareTo(BigDecimal.valueOf(100)) >= 0) { // 假设100或动态限制
-            // 正常结束由外部或前端触发，这里持续自增直至上限
+            if (newAmount.compareTo(expected) >= 0) {
+                BigDecimal diff = expected.subtract(current);
+                addedFee = diff.multiply(currentTotalUnitPrice);
+                newAmount = expected;
+                PILE_QUEUES.get(pileId).remove(billNo); // 充满自动物理出队拔枪
+                bill.setStatus("UNPAID");
+            }
+
+            bill.setChargeAmount(newAmount.setScale(2, RoundingMode.HALF_UP));
+            bill.setTotalFee(bill.getTotalFee().add(addedFee).setScale(2, RoundingMode.HALF_UP));
+            billRepository.save(bill);
         }
-        billRepository.save(bill);
     }
 
     /**
-     * 将车辆由等候区推入桩排队队列
+     * 🟩 需求三数学原理：计算桩预期等待耗时 E[T_wait]
      */
+    private BigDecimal calculateExpectedWaitingTime(String pileId) {
+        List<String> queue = PILE_QUEUES.get(pileId);
+        if (queue.isEmpty())
+            return BigDecimal.ZERO;
+
+        BigDecimal totalRemainingEnergy = BigDecimal.ZERO;
+
+        // 1. T_rem_active
+        Optional<Bill> activeOpt = billRepository.findByBillNumber(queue.get(0));
+        if (activeOpt.isPresent()) {
+            BigDecimal rem = activeOpt.get().getExpectedAmount().subtract(activeOpt.get().getChargeAmount());
+            if (rem.compareTo(BigDecimal.ZERO) > 0)
+                totalRemainingEnergy = totalRemainingEnergy.add(rem);
+        }
+
+        // 2. 后续排队总电量耗时叠加
+        for (int i = 1; i < queue.size(); i++) {
+            Optional<Bill> bOpt = billRepository.findByBillNumber(queue.get(i));
+            if (bOpt.isPresent())
+                totalRemainingEnergy = totalRemainingEnergy.add(bOpt.get().getExpectedAmount());
+        }
+
+        BigDecimal power = pileId.contains("-F") ? new BigDecimal("0.5")
+                : BigDecimal.valueOf(10).divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
+        return totalRemainingEnergy.divide(power, 4, RoundingMode.HALF_UP);
+    }
+
     public void autoDispatchWaitingArea() {
         if (WAITING_AREA.isEmpty())
             return;
 
-        for (String billNo : WAITING_AREA) {
+        for (int i = 0; i < WAITING_AREA.size(); i++) {
+            String billNo = WAITING_AREA.get(i);
             Bill bill = billRepository.findByBillNumber(billNo).orElse(null);
             if (bill == null)
                 continue;
@@ -137,29 +157,35 @@ public class ChargingScheduleEngine {
             String targetPile = findOptimalPile(typePrefix);
 
             if (targetPile != null) {
-                WAITING_AREA.remove(billNo);
+                WAITING_AREA.remove(i);
+                i--;
                 PILE_QUEUES.get(targetPile).add(billNo);
                 bill.setPileId(targetPile);
                 billRepository.save(bill);
-                System.out.println("⚡ [等候区调度] 车辆 " + bill.getUserId() + " 成功移入 " + targetPile);
             }
         }
     }
 
-    /**
-     * 寻找当前队列长度未满3的最空闲同类型充电桩
-     */
     private String findOptimalPile(String prefix) {
         String bestPile = null;
-        int minSize = 3; // 队列上限为3
+        BigDecimal minWaitTime = BigDecimal.valueOf(Double.MAX_VALUE);
 
-        for (Map.Entry<String, List<String>> entry : PILE_QUEUES.entrySet()) {
-            String pileId = entry.getKey();
+        List<String> sortedKeys = new ArrayList<>(PILE_QUEUES.keySet());
+        Collections.sort(sortedKeys);
+
+        for (String pileId : sortedKeys) {
             if (pileId.startsWith(prefix) && PILE_HEALTH.get(pileId)) {
-                int currentSize = entry.getValue().size();
-                if (currentSize < minSize) {
-                    minSize = currentSize;
-                    bestPile = pileId;
+                List<String> queue = PILE_QUEUES.get(pileId);
+                if (queue.size() < 3) { // 满足 M < 3 刚性物理车位屏障
+                    BigDecimal waitTime = calculateExpectedWaitingTime(pileId);
+                    if (waitTime.compareTo(minWaitTime) < 0) {
+                        minWaitTime = waitTime;
+                        bestPile = pileId;
+                    } else if (waitTime.compareTo(minWaitTime) == 0) {
+                        if (bestPile == null || queue.size() < PILE_QUEUES.get(bestPile).size()) {
+                            bestPile = pileId;
+                        }
+                    }
                 }
             }
         }
@@ -167,7 +193,7 @@ public class ChargingScheduleEngine {
     }
 
     /**
-     * 🛑 核心难点：充电桩突发损坏，执行最高优先级插队迁移算法
+     * 🟩 需求四：突发故障“4级阶梯物理槽位分配流转与最高特权逼退算法”
      */
     public void handlePileBreakdown(String brokenPileId) {
         PILE_HEALTH.put(brokenPileId, false);
@@ -175,45 +201,88 @@ public class ChargingScheduleEngine {
         if (brokenQueue.isEmpty())
             return;
 
-        System.out.println("🚨 [硬件报警] 充电桩 " + brokenPileId + " 损坏！等候区停止调度，启动最高优先级迁移！");
-
         String typePrefix = brokenPileId.contains("-F") ? "PILE-F" : "PILE-T";
-        List<String> copyList = new ArrayList<>(brokenQueue);
+
+        // 严格按照原始请求时间戳（startTime）由早到晚正序排列受害车辆
+        List<Bill> victimBills = new ArrayList<>();
+        for (String bNo : brokenQueue) {
+            billRepository.findByBillNumber(bNo).ifPresent(victimBills::add);
+        }
+        victimBills.sort(Comparator.comparing(Bill::getStartTime));
         brokenQueue.clear();
 
-        // 优先将损坏桩里的车辆插队转移到其他健康的同类型桩中
-        for (String billNo : copyList) {
-            boolean migrated = false;
-            // 寻找其他未满的同类型桩
-            for (String otherPileId : PILE_QUEUES.keySet()) {
-                if (otherPileId.startsWith(typePrefix) && !otherPileId.equals(brokenPileId)
-                        && PILE_HEALTH.get(otherPileId)) {
-                    List<String> targetQ = PILE_QUEUES.get(otherPileId);
-                    if (targetQ.size() < 3) {
-                        // 强制插入到除了正在充电的第1位之外的次优先排队位置
-                        int insertIndex = targetQ.isEmpty() ? 0 : 1;
-                        targetQ.add(insertIndex, billNo);
+        List<String> sortedKeys = new ArrayList<>(PILE_QUEUES.keySet());
+        Collections.sort(sortedKeys);
 
-                        Bill bill = billRepository.findByBillNumber(billNo).orElse(null);
-                        if (bill != null) {
-                            bill.setPileId(otherPileId);
-                            billRepository.save(bill);
-                        }
+        List<String> unmigratedVictims = new ArrayList<>();
+
+        for (Bill bill : victimBills) {
+            String billNo = bill.getBillNumber();
+            boolean migrated = false;
+
+            // 🥇 第一级：瞬时强电接入（健康桩空闲 len == 0）
+            for (String pId : sortedKeys) {
+                if (pId.startsWith(typePrefix) && !pId.equals(brokenPileId) && PILE_HEALTH.get(pId)) {
+                    if (PILE_QUEUES.get(pId).isEmpty()) {
+                        executeDirectInsert(pId, 0, billNo, bill);
                         migrated = true;
-                        System.out.println("♻️ [紧急流转] 车辆成功由故障桩转移插队至 -> " + otherPileId);
                         break;
                     }
                 }
             }
-            // 如果连其他同类型桩的排队位（M=3）也全挤满了，无处可去，只能以最高优先级逼退回等候区的最前方
-            if (!migrated) {
-                WAITING_AREA.add(0, billNo);
-                Bill bill = billRepository.findByBillNumber(billNo).orElse(null);
-                if (bill != null) {
-                    bill.setPileId("PENDING");
-                    billRepository.save(bill);
+            if (migrated)
+                continue;
+
+            // 🥈 第二级：首位排队锁定（健康桩只有1车充电且无排队 len == 1）
+            for (String pId : sortedKeys) {
+                if (pId.startsWith(typePrefix) && !pId.equals(brokenPileId) && PILE_HEALTH.get(pId)) {
+                    if (PILE_QUEUES.get(pId).size() == 1) {
+                        executeDirectInsert(pId, 1, billNo, bill);
+                        migrated = true;
+                        break;
+                    }
                 }
             }
+            if (migrated)
+                continue;
+
+            // 🥉 第三级：常规顺序顺延（健康桩1车充电，1车排队 len == 2）
+            for (String pId : sortedKeys) {
+                if (pId.startsWith(typePrefix) && !pId.equals(brokenPileId) && PILE_HEALTH.get(pId)) {
+                    if (PILE_QUEUES.get(pId).size() == 2) {
+                        executeDirectInsert(pId, 2, billNo, bill);
+                        migrated = true;
+                        break;
+                    }
+                }
+            }
+            if (migrated)
+                continue;
+
+            // 🚏 第四级：系统级最高优先级逼退（全场同类桩 M=3 全满载）
+            unmigratedVictims.add(billNo);
         }
+
+        // 强推回等候区绝对最头部（Index 0），并反向注入确保在等候区头部仍完美对齐原始时间戳顺序
+        if (!unmigratedVictims.isEmpty()) {
+            for (int j = unmigratedVictims.size() - 1; j >= 0; j--) {
+                String bNo = unmigratedVictims.get(j);
+                WAITING_AREA.add(0, bNo);
+                billRepository.findByBillNumber(bNo).ifPresent(b -> {
+                    b.setPileId("PENDING");
+                    billRepository.save(b);
+                });
+            }
+        }
+
+        autoDispatchWaitingArea(); // 唤醒叫号总线
+    }
+
+    private void executeDirectInsert(String pileId, int index, String billNo, Bill bill) {
+        // 遇故障迁移的车只用阶梯顺延或进入排队一号位，不用抢占当前健康桩上正在充电的0号位车
+        int realIndex = (index == 0 && !PILE_QUEUES.get(pileId).isEmpty()) ? 1 : index;
+        PILE_QUEUES.get(pileId).add(realIndex, billNo);
+        bill.setPileId(pileId);
+        billRepository.save(bill);
     }
 }
