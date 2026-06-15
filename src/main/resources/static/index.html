@@ -3,481 +3,665 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>1206组 - 智能充电桩管理面板</title>
+    <title>分布式智能充电网关 - 数字孪生大屏 (高精溯源版)</title>
     <style>
-        * {
-            box-sizing: border-box;
+        :root {
+            --bg: #0f172a;
+            --panel: #1e293b;
+            --text: #f8fafc;
+            --accent: #3b82f6;
+            --green: #10b981;
+            --yellow: #f59e0b;
+            --red: #ef4444;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            background: var(--bg);
+            color: var(--text);
             margin: 0;
             padding: 0;
         }
 
-        body {
-            background-color: #0f172a;
-            color: #f1f5f9;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            padding: 24px;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        .hidden {
+            display: none !important;
         }
 
-        .container {
-            width: 100%;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        header {
-            border-bottom: 1px solid #334155;
-            padding-bottom: 16px;
-            margin-bottom: 24px;
+        nav {
+            background: var(--panel);
+            padding: 15px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            border-bottom: 2px solid #334155;
         }
 
-        h1 {
-            font-size: 24px;
-            color: #2dd4bf;
+        .time-ctrl {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            background: #000;
+            padding: 8px 15px;
+            border-radius: 8px;
+            border: 1px solid var(--accent);
         }
 
-        .sub-title {
-            font-size: 14px;
-            color: #94a3b8;
-            margin-top: 4px;
-        }
-
-        .grid-layout {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 24px;
-            align-items: start;
-        }
-
-        @media (min-width: 1024px) {
-            .grid-layout {
-                grid-template-columns: 1fr 1.2fr 1fr;
-            }
-        }
-
-        .card {
-            background-color: #1e293b;
-            padding: 20px;
-            border: 1px solid #475569;
-            border-radius: 12px;
-            box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.3);
-        }
-
-        .card h2 {
-            font-size: 14px;
+        .time-ctrl span {
             font-weight: bold;
-            tracking-letter: 0.05em;
-            text-transform: uppercase;
+            font-size: 1.2rem;
+            color: var(--accent);
+        }
+
+        button {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+
+        button:hover {
+            filter: brightness(1.2);
+        }
+
+        input[type="time"] {
+            background: #334155;
+            border: 1px solid #475569;
+            color: white;
+            padding: 6px;
+            border-radius: 4px;
+        }
+
+        .dashboard-matrix {
+            padding: 20px;
+        }
+
+        .section-title {
+            font-size: 1.1rem;
+            color: #94a3b8;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 5px;
+        }
+
+        .wait-area-grid {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 25px;
+        }
+
+        .wait-slot {
+            width: 80px;
+            height: 40px;
+            background: #334155;
+            border-radius: 6px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 0.8rem;
+            font-weight: bold;
+            border: 1px dashed #64748b;
+        }
+
+        .wait-slot.occupied {
+            background: rgba(245, 158, 11, 0.2);
+            border: 1px solid var(--yellow);
+            color: var(--yellow);
+        }
+
+        .piles-grid {
+            display: flex;
+            gap: 20px;
+        }
+
+        .pile-card {
+            background: var(--panel);
+            border: 1px solid #334155;
+            border-radius: 8px;
+            width: 220px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            transition: 0.3s;
+        }
+
+        .pile-card.broken {
+            border-color: var(--red);
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
+        }
+
+        .pile-card h3 {
+            margin: 0;
+            font-size: 1.2rem;
+            text-align: center;
+        }
+
+        .pile-slot {
+            height: 60px;
+            background: #0f172a;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-size: 0.85rem;
+            border: 1px solid #334155;
+        }
+
+        .pile-slot.charging {
+            border-color: var(--green);
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--green);
+        }
+
+        .pile-slot.queue {
+            border-color: var(--yellow);
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--yellow);
+        }
+
+        .workspace {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1.5fr;
+            gap: 20px;
+            padding: 0 20px 20px 20px;
+        }
+
+        .panel {
+            background: var(--panel);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+        }
+
+        .panel input[type="text"] {
+            width: 100%;
+            box-sizing: border-box;
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: white;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+        }
+
+        #logList {
+            list-style: none;
+            padding: 0;
+            height: 250px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.9rem;
+        }
+
+        #logList li {
+            margin-bottom: 8px;
             padding-bottom: 8px;
-            margin-bottom: 16px;
             border-bottom: 1px solid #334155;
         }
 
-        .label {
-            font-size: 12px;
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        th,
+        td {
+            border: 1px solid #334155;
+            padding: 8px;
+            text-align: center;
+        }
+
+        th {
+            background: #0f172a;
             color: #94a3b8;
-            display: block;
-            margin-bottom: 6px;
         }
 
-        input,
-        select {
-            width: 100%;
-            background-color: #020617;
-            border: 1px solid #475569;
-            padding: 10px;
-            font-size: 14px;
-            color: #f1f5f9;
-            border-radius: 6px;
-            outline: none;
-            margin-bottom: 12px;
-        }
-
-        input:focus {
-            border-color: #2dd4bf;
-        }
-
-        .btn {
-            width: 100%;
-            border: none;
-            padding: 12px;
-            font-size: 14px;
-            font-weight: 500;
-            border-radius: 6px;
+        tbody tr:hover {
+            background: #334155;
             cursor: pointer;
-            transition: all 0.2s;
-            margin-bottom: 8px;
-            color: white;
         }
 
-        .btn-teal {
-            background-color: #0d9488;
-        }
-
-        .btn-teal:hover {
-            background-color: #115e59;
-        }
-
-        .btn-amber {
-            background-color: #d97706;
-        }
-
-        .btn-amber:hover {
-            background-color: #b45309;
-        }
-
-        .btn-blue {
-            background-color: #2563eb;
-        }
-
-        .btn-blue:hover {
-            background-color: #1d4ed8;
-        }
-
-        .btn-slate {
-            background-color: #475569;
-        }
-
-        .btn-slate:hover {
-            background-color: #334155;
-        }
-
-        .btn-emerald {
-            background-color: #059669;
-        }
-
-        .btn-emerald:hover {
-            background-color: #047857;
-        }
-
-        .btn-disabled {
-            background-color: #334155;
-            color: #64748b;
-            cursor: not-allowed;
-        }
-
-        .monitor-box {
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
             display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: var(--panel);
+            padding: 30px;
+            border-radius: 12px;
+            width: 500px;
+            border: 1px solid #475569;
+        }
+
+        .modal-content h2 {
+            margin-top: 0;
+            color: var(--accent);
+            border-bottom: 1px solid #334155;
+            padding-bottom: 10px;
+        }
+
+        .bill-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 0.95rem;
+        }
+
+        .bill-total {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: var(--green);
+            border-top: 1px solid #334155;
+            padding-top: 15px;
+            margin-top: 15px;
+            text-align: right;
+        }
+
+        #loadingOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.9);
+            z-index: 2000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
             flex-direction: column;
-            height: 400px;
         }
 
-        .log-container {
-            flex: 1;
-            overflow-y: auto;
-            font-family: monospace;
-            font-size: 11px;
-            color: #4ade80;
-            background-color: #020617;
-            padding: 10px;
-            border-radius: 6px;
-            margin-top: 10px;
-            line-height: 1.6;
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #334155;
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
         }
 
-        .log-item {
-            padding: 6px;
-            background: rgba(15, 23, 42, 0.6);
-            border: 1px solid #1e293b;
-            border-radius: 4px;
-            margin-bottom: 6px;
-            word-break: break-all;
-        }
-
-        .status-unpaid {
-            color: #f87171;
-            font-weight: bold;
-        }
-
-        .status-success {
-            color: #6ee7b7;
-            font-weight: bold;
-        }
-
-        .status-warn {
-            color: #fbbf24;
-            font-weight: bold;
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
         }
     </style>
 </head>
 
 <body>
 
-    <div id="loginWindow" class="card" style="width: 100%; max-width: 400px;">
-        <h1 style="text-align: center; margin-bottom: 4px;">⚡ 智能充电桩系统网关</h1>
-        <p style="text-align: center; font-size: 12px; color: #94a3b8; margin-bottom: 20px;">1206组大作业 - 本地纯净运行版</p>
-
-        <div>
-            <span class="label">账号</span>
-            <input id="loginUser" type="text" placeholder="请输入账号">
-
-            <span class="label">密码</span>
-            <input id="loginPass" type="password" placeholder="请输入密码">
-
-            <span class="label">指定角色身份（仅在点击注册时生效）</span>
-            <select id="registerRole">
-                <option value="USER">🚗 普通车主用户 (USER)</option>
-                <option value="ADMIN">🛠️ 系统超级管理员 (ADMIN)</option>
-            </select>
-
-            <div style="display: flex; gap: 12px; margin-top: 16px;">
-                <button onclick="handleLogin()" class="btn btn-teal" style="margin:0;">🔑 登 录</button>
-                <button onclick="handleRegister()" class="btn btn-slate" style="margin:0;">📝 注册账号</button>
-            </div>
-            <p id="loginError"
-                style="text-align: center; font-size: 12px; color: #f87171; margin-top: 12px; min-height: 16px;"></p>
+    <div id="loginContainer" class="modal">
+        <div class="modal-content" style="text-align: center;">
+            <h2>🔌 充电桩数字孪生网关</h2>
+            <input type="text" id="username" placeholder="输入账号 (如: admin 或 V1)"
+                style="width:100%; padding:10px; margin-bottom:15px; background:#0f172a; border:1px solid #334155; color:white;">
+            <input type="password" id="password" placeholder="密码"
+                style="width:100%; padding:10px; margin-bottom:15px; background:#0f172a; border:1px solid #334155; color:white;">
+            <button onclick="login()" style="width:100%; padding:12px;">安全入网认证</button>
         </div>
     </div>
 
-    <div id="mainWindow" class="container" style="display: none;">
-        <header>
+    <div id="loadingOverlay" class="hidden">
+        <div class="spinner"></div>
+        <h2 style="margin-top:20px; color:var(--accent);">正在调度 Java 后端集群，请稍候...</h2>
+    </div>
+
+    <div id="mainApp" class="hidden">
+        <nav>
+            <div class="time-ctrl">
+                <span>⏱️ 后端时钟: <span id="sysTimeDisplay">06:00</span></span>
+                <button id="pauseBtn" onclick="togglePause()">⏸️ 暂停 (Pause)</button>
+                <div style="border-left: 2px solid #334155; height: 25px; margin: 0 10px;"></div>
+
+                <input type="file" id="fileUploader" accept=".txt" style="display: none;"
+                    onchange="handleFileUpload(event)">
+                <button onclick="document.getElementById('fileUploader').click()" style="background:#475569;"
+                    class="admin-only hidden">📁 导入全局用例</button>
+
+                <input type="time" id="jumpTimeInput" value="12:00">
+                <button onclick="jumpToTime()" style="background:var(--yellow); color:#000;">🚀 时空跃迁 (Jump)</button>
+                <button onclick="resetSystem()" style="background:var(--red);">🔄 清库重置</button>
+            </div>
             <div>
-                <h1>⚡ 充电桩分布式实时事务管理沙盘</h1>
-                <div class="sub-title">
-                    当前权限: <span id="identityTag" style="color: #2dd4bf; font-weight: bold;"></span>
-                    | 识别 ID: <span id="currentUid"
-                        style="color: #fbbf24; font-weight: bold; font-family: monospace;"></span>
-                </div>
+                当前鉴权: <strong id="userRoleDisplay" style="color:var(--accent);"></strong>
+                <button onclick="location.reload()"
+                    style="margin-left: 15px; background:transparent; border:1px solid white;">注销</button>
             </div>
-            <button onclick="location.reload()" class="logout-btn">安全登出</button>
-        </header>
+        </nav>
 
-        <div class="grid-layout">
-            <div id="panelUser" class="card" style="display: none;">
-                <h2 style="color: #fbbf24;">Step 1. 提交充电订单</h2>
-                <span class="label">设置预计充电时间/时长 (分钟)</span>
-                <input id="chargeMinutes" type="number" value="30">
-                <p style="font-size: 10px; color: #64748b; margin-top: -6px; margin-bottom: 16px; font-style: italic;">※
-                    调度法则：慢充30min/6元 | 快充30min/18元</p>
+        <div class="dashboard-matrix">
+            <div class="section-title">🚦 等候区流转序列 (Waiting Area N=10)</div>
+            <div class="wait-area-grid" id="waitAreaGrid"></div>
 
-                <button onclick="submitOrder('FAST')" class="btn btn-amber">🚀 申请高性能快充 (FAST)</button>
-                <button onclick="submitOrder('SLOW')" class="btn btn-blue">🐢 申请经济型慢充 (SLOW)</button>
-            </div>
+            <div class="section-title">🔋 分布式物理充电桩矩阵 (M=3)</div>
+            <div class="piles-grid" id="pilesGrid"></div>
+        </div>
 
-            <div class="card monitor-box">
-                <h2 style="color: #2dd4bf; display: flex; justify-content: space-between;">
-                    <span>🖥️ LIVE MONITOR 核心调度监视器</span>
-                    <span id="pollTag" style="font-size: 10px; color: #64748b;">总线空闲</span>
-                </h2>
-                <div id="monitorLogContainer" class="log-container">
-                    <div style="color: #64748b; font-style: italic;">● 正在等待业务指令发起，高频数据总线处于静默监听状态...</div>
-                </div>
+        <div class="workspace">
+            <div class="panel user-only hidden" id="userInjectPanel">
+                <div class="section-title">📡 业务网关 (用户指令终端)</div>
+                <input type="text" id="eventInput" placeholder="请输入指令，例: (A,V1,T,40)">
+                <button onclick="sendEvent()" style="width: 100%;">发起请求</button>
             </div>
 
-            <div id="panelPay" class="card" style="display: none;">
-                <h2 style="color: #34d399;">Step 2. 离场结算网关</h2>
-                <span class="label">当前锁定的流水号</span>
-                <input id="billNumber" type="text" placeholder="订单提交后自动绑定" readonly
-                    style="color: #94a3b8; font-family: monospace;">
-
-                <div style="margin-top: 16px;">
-                    <button id="btnStop" onclick="stopCharging()" class="btn btn-slate btn-disabled" disabled>🔌 结束充电
-                        (拔枪释放物理桩)</button>
-                    <button id="btnPay" onclick="payWithWeChat()" class="btn btn-slate btn-disabled" disabled>🟢
-                        模拟微信支付安全结算</button>
+            <div class="panel admin-only hidden" id="adminActiveOrderPanel">
+                <div class="section-title">📊 监控中心：全网活动订单</div>
+                <div style="height: 250px; overflow-y: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>车主</th>
+                                <th>落点追踪</th>
+                                <th>目标</th>
+                                <th>已充</th>
+                            </tr>
+                        </thead>
+                        <tbody id="activeOrdersBody"></tbody>
+                    </table>
                 </div>
             </div>
 
-            <div id="panelAdmin" class="card" style="display: none; grid-column: span 3;">
-                <h2 style="color: #2dd4bf;">🛠 ---- 管理端专用物理桩状态监控 ----</h2>
-                <div
-                    style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; font-family: monospace; font-size: 12px;">
-                    <div style="background:#020617; padding:12px; border:1px solid #334155; border-radius:4px;"><span
-                            style="color:#94a3b8">快充桩 A01:</span> <span style="color:#4ade80">● 智能分布式监听中</span></div>
-                    <div style="background:#020617; padding:12px; border:1px solid #334155; border-radius:4px;"><span
-                            style="color:#94a3b8">快充桩 A02:</span> <span style="color:#4ade80">● 智能分布式监听中</span></div>
-                    <div style="background:#020617; padding:12px; border:1px solid #334155; border-radius:4px;"><span
-                            style="color:#94a3b8">慢充桩 B01:</span> <span style="color:#4ade80">● 智能分布式监听中</span></div>
-                    <div style="background:#020617; padding:12px; border:1px solid #334155; border-radius:4px;"><span
-                            style="color:#94a3b8">慢充桩 B02:</span> <span style="color:#4ade80">● 智能分布式监听中</span></div>
+            <div class="panel">
+                <div class="section-title" id="logTitle">📺 调度网关日志</div>
+                <ul id="logList"></ul>
+            </div>
+
+            <div class="panel">
+                <div class="section-title" id="billTitle">💰 财务清算中心</div>
+                <div style="height: 250px; overflow-y: auto;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>交易单号</th>
+                                <th>车主</th>
+                                <th>桩号</th>
+                                <th>总费用</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="billTableBody"></tbody>
+                    </table>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <div id="detailModal" class="modal hidden">
+        <div class="modal-content">
+            <h2 id="modalTitle">🧾 订单详情溯源</h2>
+            <div id="detailContent"></div>
+            <button onclick="document.getElementById('detailModal').classList.add('hidden')"
+                style="width:100%; margin-top:20px; background:#475569;">关闭窗口</button>
         </div>
     </div>
 
     <script>
-        window.currentUsername = "";
-        window.currentUserId = "";
-        window.activeBillNumber = "";
-        window.pollingInterval = null;
-        window.lastAssignedPile = null;
-        window.pendingLogged = false;
+        let currentRole = '';
+        let currentUser = '';
+        let isJumping = false;
+        let globalDataCache = null;
 
-        function appendLog(msg, type = "info") {
-            const container = document.getElementById('monitorLogContainer');
-            if (container.innerHTML.includes("正在等待业务指令")) container.innerHTML = "";
-            const timeStr = new Date().toLocaleTimeString();
-
-            let classStyle = "";
-            if (type === "warn") classStyle = "class='status-warn'";
-            if (type === "danger") classStyle = "class='status-unpaid'";
-            if (type === "success") classStyle = "class='status-success'";
-
-            const logItem = `<div class="log-item"><span style="color:#64748b">[${timeStr}]</span> <span ${classStyle}>${msg}</span></div>`;
-            container.innerHTML = container.innerHTML + logItem;
-            container.scrollTop = container.scrollHeight;
-        }
-
-        function handleLogin() {
-            const u = document.getElementById('loginUser').value;
-            const p = document.getElementById('loginPass').value;
-            if (!u || !p) return;
-
-            fetch(`/api/user/login?username=${u}&password=${p}`)
-                .then(res => res.text())
-                .then(data => {
-                    if (data.startsWith("SUCCESS:")) {
-                        // 🟩 核心修复点：把变量名统一合并成 parts，彻底粉碎异常
-                        const parts = data.split(":");
-                        const userRole = parts[1].trim().toUpperCase();
-                        window.currentUserId = parts[2].trim();
-                        window.currentUsername = u;
-
-                        document.getElementById('loginWindow').style.display = 'none';
-                        document.getElementById('mainWindow').style.display = 'block';
-                        document.getElementById('currentUid').innerText = window.currentUserId;
-
-                        const tag = document.getElementById('identityTag');
-                        const panelAdmin = document.getElementById('panelAdmin');
-                        const panelUser = document.getElementById('panelUser');
-                        const panelPay = document.getElementById('panelPay');
-
-                        if (userRole === 'ADMIN') {
-                            tag.innerText = "🛠️ 超级管理员 (ADMIN)";
-                            panelAdmin.style.display = 'block';
-                            panelUser.style.display = 'none';
-                            panelPay.style.display = 'none';
-                            appendLog(`⚙️ 超级管理员 [${u}] 成功握手，管理端监控内核挂载完毕。`);
-                        } else {
-                            tag.innerText = "🚗 进场车主用户 (USER)";
-                            panelAdmin.style.display = 'none';
-                            panelUser.style.display = 'block';
-                            panelPay.style.display = 'block';
-                            appendLog(`👤 车主 [${u}] 鉴权成功，后端 1000 元默认初始本金已激活。`);
-                        }
-                    } else {
-                        document.getElementById('loginError').innerText = "❌ " + data;
-                    }
-                }).catch(err => {
-                    document.getElementById('loginError').innerText = "❌ 无法连接到后端服务，请确认后端已成功拉起。";
-                });
-        }
-
-        function handleRegister() {
-            const u = document.getElementById('loginUser').value;
-            const p = document.getElementById('loginPass').value;
-            const r = document.getElementById('registerRole').value;
-            const err = document.getElementById('loginError');
-            if (!u || !p) { err.innerText = "❌ 账号或密码不能为空"; return; }
-            fetch(`/api/user/register?username=${u}&password=${p}&role=${r}`).then(res => res.text()).then(data => { err.innerText = data; });
-        }
-
-        function submitOrder(type) {
-            const mins = document.getElementById('chargeMinutes').value;
-            if (!mins || mins <= 0) return;
-
-            fetch(`/api/charging/apply?userId=${window.currentUserId}&chargeType=${type}&chargeMinutes=${mins}`)
-                .then(res => res.text())
-                .then(rawResponse => {
-                    const tokens = rawResponse.split(":");
-                    const billNo = tokens[0];
-                    const predPile = tokens[1];
-                    const predWait = tokens[2];
-                    const totalFee = tokens[3];
-
-                    window.activeBillNumber = billNo;
-                    document.getElementById('billNumber').value = billNo;
-
-                    appendLog(`📝 订单成功提交！流水号: ${billNo}`, "warn");
-                    appendLog(`🔮 【核心调度算法前置推演模型汇报】:\n   ▪ 预计指派物理桩位: [${predPile}]\n   ▪ 预计前方排队时间: [${predWait}]\n   ▪ 预计最终结算账单: [${totalFee}] 元`, "success");
-                    appendLog(`⏳ 数据已成功打入 Redis 高频缓冲层，正在等待强电触点接通...`);
-
-                    const btnStop = document.getElementById('btnStop');
-                    btnStop.disabled = false;
-                    btnStop.className = "btn btn-amber";
-
-                    startRealtimeMonitor();
-                });
-        }
-
-        function startRealtimeMonitor() {
-            if (window.pollingInterval) clearInterval(window.pollingInterval);
-            const tag = document.getElementById('pollTag');
-            tag.innerText = "● 实时轮询中";
-            tag.style.color = "#2dd4bf";
-
-            window.pollingInterval = setInterval(() => {
-                fetch(`/api/charging/status?billNumber=${window.activeBillNumber}`)
-                    .then(res => res.text())
-                    .then(statusData => {
-                        if (statusData === "NOT_FOUND") return;
-                        const parts = statusData.split(":");
-                        const status = parts[0];
-                        const pileId = parts[1];
-
-                        if (status === "CHARGING") {
-                            if (pileId === "PENDING") {
-                                if (!window.pendingLogged) {
-                                    appendLog(`🛰️ 实时监控：订单处于 Redis 排队缓冲中，等待后台调度引擎指派...`);
-                                    window.pendingLogged = true;
-                                }
-                            } else {
-                                if (!window.lastAssignedPile || window.lastAssignedPile !== pileId) {
-                                    appendLog(`⚡ [实时连通汇报] 强电继电器吸合成功！物理桩号 [${pileId}] 正式接入充电状态。`, "success");
-                                    appendLog(`🔋 [${pileId}] 强电持续稳定输送中，车载控制系统正在高频接收电量...`);
-                                    window.lastAssignedPile = pileId;
-                                }
-                            }
-                        } else if (status === "UNPAID") {
-                            if (pileId === "PENDING") {
-                                appendLog(`⚠️ 车主提前取消排队，事务终止，账单执行 0 元抹平。`, "warn");
-                            } else {
-                                appendLog(`🔌 强电脉冲关闭，物理连接断开！物理桩 [${pileId}] 已被安全释放。`, "warn");
-                            }
-                            appendLog(`🔔 【核心总线催缴提醒】充电已结束！请立即点击右侧微信支付进行清算离场！`, "danger");
-
-                            document.getElementById('btnStop').disabled = true;
-                            document.getElementById('btnStop').className = "btn btn-slate btn-disabled";
-
-                            const btnPay = document.getElementById('btnPay');
-                            btnPay.disabled = false;
-                            btnPay.className = "btn btn-emerald";
-
-                            clearInterval(window.pollingInterval);
-                        }
-                    });
-            }, 1200);
-        }
-
-        function stopCharging() {
-            fetch(`/api/charging/stop?billNumber=${window.activeBillNumber}`);
-        }
-
-        function payWithWeChat() {
-            fetch(`/api/charging/pay?billNumber=${window.activeBillNumber}`).then(res => res.text()).then(data => {
-                if (data.startsWith("SUCCESS:")) {
-                    const realFee = data.split(":")[1];
-                    appendLog(`✅ [微信支付成功] 成功扣除安全钱包本金 [${realFee}] 元！本次充电事务圆满销账闭环。`, "success");
-
-                    const btnPay = document.getElementById('btnPay');
-                    btnPay.disabled = true;
-                    btnPay.className = "btn btn-slate btn-disabled";
-
-                    document.getElementById('billNumber').value = "";
-                    window.lastAssignedPile = null;
-                    window.activeBillNumber = "";
-                    window.pendingLogged = false;
-                } else {
-                    appendLog(`❌ 微信支付核销失败：${data}`, "danger");
+        // 🎯 核心新增：高精单号反向解析器，从单号中无误差提取真实车牌号，彻底解决 ID 偏移问题
+        function getCarName(billNo) {
+            if (!billNo) return "";
+            let parts = billNo.split('-');
+            for (let p of parts) {
+                if (p.startsWith('V') && p.length > 1 && !isNaN(p.substring(1))) {
+                    return p;
                 }
+            }
+            return billNo;
+        }
+
+        async function login() {
+            let u = document.getElementById('username').value;
+            let p = document.getElementById('password').value;
+            let fd = new FormData(); fd.append('username', u); fd.append('password', p);
+            let res = await fetch('/api/user/login', { method: 'POST', body: fd });
+            if (res.ok) {
+                let data = await res.json();
+                currentRole = data.role;
+                currentUser = data.username;
+
+                document.getElementById('loginContainer').classList.add('hidden');
+                document.getElementById('mainApp').classList.remove('hidden');
+                document.getElementById('userRoleDisplay').innerText = currentUser + " (" + currentRole + ")";
+
+                if (currentRole === 'ADMIN') {
+                    document.querySelectorAll('.admin-only').forEach(e => e.classList.remove('hidden'));
+                    document.getElementById('logTitle').innerText = "📺 全局调度审计日志";
+                    document.getElementById('billTitle').innerText = "💰 财务清算中心 (全网账单)";
+                } else {
+                    document.querySelectorAll('.user-only').forEach(e => e.classList.remove('hidden'));
+                    document.getElementById('logTitle').innerText = `📺 专属调度轨迹 (${currentUser})`;
+                    document.getElementById('billTitle').innerText = `💰 我的钱包明细 (${currentUser})`;
+                }
+
+                await fetchStatus();
+                setInterval(() => { if (!isJumping) { fetchStatus(); fetchBills(); } }, 1000);
+            } else { alert("安全网关拦截：账户或密码错误"); }
+        }
+
+        async function sendEvent() {
+            let raw = document.getElementById('eventInput').value;
+            if (!raw) return;
+            await fetch('/api/charging/event?rawTuple=' + encodeURIComponent(raw), { method: 'POST' });
+            document.getElementById('eventInput').value = '';
+            fetchStatus(); fetchBills();
+        }
+
+        async function togglePause() {
+            let isPaused = globalDataCache.isPaused;
+            await fetch('/api/time/' + (isPaused ? 'resume' : 'pause'), { method: 'POST' });
+            fetchStatus();
+        }
+
+        async function resetSystem() {
+            await fetch('/api/system/reset', { method: 'POST' });
+            fetchStatus(); fetchBills();
+        }
+
+        async function jumpToTime() {
+            let targetStr = document.getElementById('jumpTimeInput').value;
+            if (!targetStr) return;
+            isJumping = true;
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+            await fetch('/api/time/jump?target=' + targetStr, { method: 'POST' });
+            document.getElementById('loadingOverlay').classList.add('hidden');
+            isJumping = false;
+            fetchStatus(); fetchBills();
+        }
+
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async function (e) {
+                await fetch('/api/time/upload-cases', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: e.target.result });
+            };
+            reader.readAsText(file);
+        }
+
+        async function fetchStatus() {
+            let res = await fetch('/api/system/status');
+            let data = await res.json();
+            globalDataCache = data;
+
+            document.getElementById('sysTimeDisplay').innerText = data.time;
+            document.getElementById('pauseBtn').innerText = data.isPaused ? "▶️ 解除冻结" : "⏸️ 挂起总线";
+
+            if (data.logs) {
+                let list = document.getElementById('logList');
+                list.innerHTML = '';
+                let userRegex = new RegExp("\\b" + currentUser + "\\b");
+
+                for (let i = data.logs.length - 1; i >= 0; i--) {
+                    let log = data.logs[i];
+                    if (currentRole !== 'ADMIN' && !userRegex.test(log)) continue;
+                    let li = document.createElement('li');
+                    li.innerText = log;
+                    list.appendChild(li);
+                }
+            }
+
+            // 渲染等候区
+            let waitHtml = '';
+            for (let i = 0; i < 10; i++) {
+                if (i < data.waitArea.length) {
+                    let bNo = data.waitArea[i];
+                    let car = data.cars[bNo];
+                    // 🎯 核心修复 2：等候区不再信任物理自增 ID，改用单号高精解析器渲染正确车牌
+                    let carName = getCarName(bNo) || car.userId;
+                    waitHtml += `<div class="wait-slot occupied">${carName}<br>${car.req}度</div>`;
+                } else {
+                    waitHtml += `<div class="wait-slot">空闲</div>`;
+                }
+            }
+            document.getElementById('waitAreaGrid').innerHTML = waitHtml;
+
+            // 渲染物理充电桩
+            let pilesHtml = '';
+            ['PILE-F1', 'PILE-F2', 'PILE-T1', 'PILE-T2', 'PILE-T3'].forEach(pId => {
+                let pile = data.piles[pId];
+                let isBroken = !pile.health;
+                let title = pId.replace('PILE-', '') + (pId.includes('F') ? ' (快)' : ' (慢)');
+                let cardHtml = `<div class="pile-card ${isBroken ? 'broken' : ''}"><h3>${title} ${isBroken ? '🚨' : ''}</h3>`;
+                for (let i = 0; i < 3; i++) {
+                    if (i < pile.queue.length) {
+                        let bNo = pile.queue[i];
+                        let car = data.cars[bNo];
+                        // 🎯 核心修复 3：充电桩卡槽不再信任物理自增 ID，改用单号高精解析器渲染正确车牌
+                        let carName = getCarName(bNo) || car.userId;
+                        let cssClass = i === 0 ? 'charging' : 'queue';
+                        let label = i === 0 ? '⚡' : '⏳';
+                        cardHtml += `<div class="pile-slot ${cssClass}">
+                            <strong>${label} ${carName}</strong>
+                            <span>${car.charged.toFixed(1)} / ${car.req} 度</span>
+                        </div>`;
+                    } else {
+                        cardHtml += `<div class="pile-slot">空槽位</div>`;
+                    }
+                }
+                cardHtml += `</div>`;
+                pilesHtml += cardHtml;
             });
+            document.getElementById('pilesGrid').innerHTML = pilesHtml;
+
+            if (currentRole === 'ADMIN') {
+                let activeHtml = '';
+                data.waitArea.forEach(bNo => {
+                    let car = data.cars[bNo];
+                    let carName = getCarName(bNo) || car.userId;
+                    activeHtml += `<tr onclick="showActiveDetail('${bNo}')"><td>${carName}</td><td style="color:var(--yellow)">等候区挂载</td><td>${car.req}</td><td>0.00</td></tr>`;
+                });
+                Object.keys(data.piles).forEach(pId => {
+                    data.piles[pId].queue.forEach((bNo, idx) => {
+                        let car = data.cars[bNo];
+                        let carName = getCarName(bNo) || car.userId;
+                        let statusHtml = idx === 0 ? `<span style="color:var(--green)">⚡ ${pId} 供电中</span>` : `<span style="color:var(--yellow)">⏳ ${pId} 排队第${idx}位</span>`;
+                        activeHtml += `<tr onclick="showActiveDetail('${bNo}')"><td>${carName}</td><td>${statusHtml}</td><td>${car.req}</td><td>${car.charged.toFixed(2)}</td></tr>`;
+                    });
+                });
+                document.getElementById('activeOrdersBody').innerHTML = activeHtml;
+            }
+        }
+
+        function showActiveDetail(billNo) {
+            let car = globalDataCache.cars[billNo];
+            if (!car) return;
+            let carName = getCarName(billNo) || car.userId;
+            document.getElementById('modalTitle').innerText = "📍 活动车辆实时遥测";
+            document.getElementById('detailContent').innerHTML = `
+                <div class="bill-row"><span>动态分配单号:</span> <span style="font-size:0.8rem">${billNo}</span></div>
+                <div class="bill-row"><span>入网车主身份:</span> <span>${carName}</span></div>
+                <div class="bill-row"><span>充电模式指派:</span> <span>${car.type === 'F' ? '极速快充 (0.5度/分)' : '标准慢充 (10度/时)'}</span></div>
+                <hr style="border:1px dashed #334155; margin:15px 0;">
+                <div class="bill-row"><span>🎯 用户目标额度:</span> <span>${car.req.toFixed(2)} 度</span></div>
+                <div class="bill-row"><span>🔋 现已充入电量:</span> <span>${car.charged.toFixed(2)} 度</span></div>
+                <div class="bill-total">当前预估产生费用: ¥${car.cost.toFixed(2)}</div>
+            `;
+            document.getElementById('detailModal').classList.remove('hidden');
+        }
+
+        async function fetchBills() {
+            try {
+                let endpoint = currentRole === 'ADMIN' ? '/api/charging/all-bills' : '/api/charging/my-bills';
+                let res = await fetch(endpoint);
+                if (!res.ok) return;
+
+                let bills = await res.json();
+                let html = '';
+                bills.forEach(b => {
+                    let actionBtn = `<button style="background:var(--accent); padding:4px 8px; font-size:0.8rem;" onclick='openBillModal(${JSON.stringify(b)})'>10分钟脉冲详单</button>`;
+                    let statusSpan = b.status === 'CHARGING' ? `<span style="color:var(--accent)">在网作业</span>` :
+                        (b.status === 'UNPAID' ? `<span style="color:var(--yellow)">完结待核销</span>` : `<span style="color:var(--green)">核销闭环</span>`);
+
+                    // 🎯 核心修复 4：财务账单表格车牌号渲染，优先调取后端最新支持的 username 权威字段，兜底进行单号逆向解析
+                    let finalCarName = b.username || getCarName(b.billNumber) || ('V' + b.userId);
+
+                    html += `<tr>
+                        <td style="font-size:0.7rem;">...${b.billNumber.substring(b.billNumber.length - 6)}</td>
+                        <td>${finalCarName}</td>
+                        <td>${b.pileId.replace('PILE-', '')}<br>${statusSpan}</td>
+                        <td style="color:var(--green); font-weight:bold;">¥${b.totalFee.toFixed(2)}</td>
+                        <td>${actionBtn}</td>
+                    </tr>`;
+                });
+                document.getElementById('billTableBody').innerHTML = html;
+            } catch (e) { }
+        }
+
+        function openBillModal(b) {
+            document.getElementById('modalTitle').innerText = "🧾 历史账单高精溯源";
+
+            let vFee = b.valleyPower * 1.2;
+            let fFee = b.flatPower * 1.5;
+            let pFee = b.peakPower * 1.8;
+            let sFee = (b.valleyPower + b.flatPower + b.peakPower) * 0.8;
+
+            // 🎯 核心修复 5：详单弹窗车主标识同步改为优先读取唯一的 username 字段
+            let finalCarName = b.username || getCarName(b.billNumber) || ('V' + b.userId);
+
+            let detailHtml = `
+                <div class="bill-row"><span>全局交易单号:</span> <span style="font-size:0.8rem">${b.billNumber}</span></div>
+                <div class="bill-row"><span>车主标识:</span> <span>${finalCarName}</span></div>
+                <div class="bill-row"><span>落点桩位:</span> <span>${b.pileId}</span></div>
+                <hr style="border:1px dashed #334155; margin:15px 0;">
+                <div class="bill-row"><span>🟢 谷段电耗 (06:00-07:00):</span> <span>${b.valleyPower.toFixed(2)} 度 (¥${vFee.toFixed(2)})</span></div>
+                <div class="bill-row"><span>🟡 平段电耗 (07:00-10:00):</span> <span>${b.flatPower.toFixed(2)} 度 (¥${fFee.toFixed(2)})</span></div>
+                <div class="bill-row"><span>🔴 峰段电耗 (10:00后):</span> <span>${b.peakPower.toFixed(2)} 度 (¥${pFee.toFixed(2)})</span></div>
+                <div class="bill-row" style="color:#94a3b8; font-size:0.85rem;"><span>（其中包含机房服务费）:</span> <span>(¥${sFee.toFixed(2)})</span></div>
+                <div class="bill-total">核销总计金额: ¥${b.totalFee.toFixed(2)}</div>
+            `;
+
+            detailHtml += `<div style="margin-top:15px; background:#0f172a; padding:10px; border-radius:6px; border:1px solid #334155;">
+                <div style="font-size:0.85rem; color:#94a3b8; margin-bottom:8px;">⏱️ 订单生命周期 - 10 分钟计费脉冲追踪：</div>
+                <ul style="margin:0; padding-left:20px; font-size:0.8rem; color:#cbd5e1; max-height:120px; overflow-y:auto;">`;
+
+            if (b.detailLogs && b.detailLogs.length > 0) {
+                b.detailLogs.forEach(log => { detailHtml += `<li style="margin-bottom:4px;">${log}</li>`; });
+            } else {
+                detailHtml += `<li>⏳ 后端 10 分钟级脉冲引擎升级中，待对接真实数据...</li>`;
+            }
+            detailHtml += `</ul></div>`;
+
+            document.getElementById('detailContent').innerHTML = detailHtml;
+            document.getElementById('detailModal').classList.remove('hidden');
         }
     </script>
 </body>

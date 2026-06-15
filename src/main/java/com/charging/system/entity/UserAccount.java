@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 public class UserAccount {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY) // 🎯 核心修复：加上这行，告诉 Hibernate 和 MySQL 自动递增生成 ID
     private Long id;
 
     @Column(unique = true, nullable = false, length = 50)
