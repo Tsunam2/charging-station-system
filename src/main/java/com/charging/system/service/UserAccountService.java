@@ -64,4 +64,39 @@ public class UserAccountService {
         account.setBalance(account.getBalance().add(amount));
         return accountRepository.save(account);
     }
+
+    // ==============================================================================
+    // 🎯 软工大作业适配器专区 (Adapter) - 用于完美契合大作业 UML 注册与密码设置要求
+    // ==============================================================================
+
+    /**
+     * UML映射：1、创建新账号
+     * 将文档要求的 car_Id, userName, car_Capacity 进行拆解并映射到底层实际业务
+     */
+    public String createNewAccount(String car_Id, String userName, Double car_Capacity) {
+        try {
+            // 在我们的高内聚系统中，车牌号/用户名是唯一标识。
+            // 为了模拟文档的两步注册逻辑（先创建，后设密码），此处分配一个初始占位密码
+            // car_Capacity 参数在实际调度中由车辆提交的 Request_Amount 替代，此处作透传忽略
+            register(car_Id, "PENDING_PWD_SETUP", "USER");
+            return "Return(1)";
+        } catch (Exception e) {
+            return "Return(0)";
+        }
+    }
+
+    /**
+     * UML映射：2、验证数据/设置密码
+     * 将第一步初始化的账号更新为用户实际提供的密码
+     */
+    public String set_pwd(String car_Id, String password) {
+        Optional<UserAccount> accountOpt = accountRepository.findByUsername(car_Id);
+        if (accountOpt.isPresent()) {
+            UserAccount account = accountOpt.get();
+            account.setPassword(password);
+            accountRepository.save(account);
+            return "Return(1)";
+        }
+        return "Return(0)";
+    }
 }
